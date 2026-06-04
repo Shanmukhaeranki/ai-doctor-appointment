@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Doctor Appointment System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f0f4f8; }
+        .navbar { background: linear-gradient(135deg, #1a73e8, #0d47a1); }
+        .card { border: none; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .btn-primary { background: #1a73e8; border: none; border-radius: 8px; }
+        .btn-primary:hover { background: #0d47a1; }
+        .symptom-result { background: #e8f5e9; border-left: 4px solid #4caf50; padding: 15px; border-radius: 8px; }
+        .doctor-card { transition: transform 0.2s; }
+        .doctor-card:hover { transform: translateY(-5px); }
+        .ai-response { white-space: pre-line; font-size: 14px; }
+        .show-pass-label { font-size: 13px; color: #555; cursor: pointer; user-select: none; }
+    </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+const API = '';
+
+function Login({ onLogin, goRegister }) {
+    const [form, setForm] = useState({ email: '', password: '' });
+    const [error, setError] = useState('');
+    const [showPass, setShowPass] = useState(false);
+
+    const submit = async () => {
+        try {
+            const res = await fetch(`${API}/api/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(form)
+            });
+            const data = await res.json();
+            if (data.token) onLogin(data);
+            else setError(data.error || 'Login failed');
+        } catch (err) {
+            setError('Something went wrong');
+        }
+    };
+
+    return (
+        <div className="container mt-5" style={{maxWidth: 400}}>
+            <div className="card p-4">
+                <h3 className="text-center mb-4">🏥 Doctor Appointment</h3>
+                <h5 className="mb-3">Login</h5>
+                {error && <div className="alert alert-danger">{error}</div>}
+                <input className="form-control mb-3" placeholder="Email"
+                    onChange={e => setForm({...form, email: e.target.value})} />
+                <input className="form-control mb-2" type={showPass ? 'text' : 'password'} placeholder="Password"
+                    onChange={e => setForm({...form, password: e.target.value})} />
+                <label className="show-pass-label mb-3 d-flex align-items-center gap-2">
+                    <input type="checkbox" onChange={e => setShowPass(e.target.checked)} />
+                    Show Password
+                </label>
+                <button className="btn btn-primary w-100 mb-2" onClick={submit}>Login</button>
+                <button className="btn btn-outline-primary w-100" onClick={goRegister}>Register as Patient</button>
+                <hr/>
+                <small className="text-muted">
+                    Demo: admin@hospital.com / admin123<br/>
+                    Doctor: rajesh@hospital.com / admin123
+                </small>
+            </div>
+        </div>
+    );
+}
+
+function Register({ onDone }) {
+    const [form, setForm] = useState({ name: '', email: '', password: '' });
+    const [msg, setMsg] = useState('');
+    const [error, setError] = useState('');
+    const [showPass, setShowPass] = useState(false);
+
+    const submit = async () => {
+        try {
+            const res = await fetch(`${API}/api/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(form)
+            });
+            const data = await res.json();
+            if (data.message) {
+                setMsg('Registered! Please login.');
+                setTimeout(onDone, 1500);
+            } else {
+                setError(data.error || 'Registration failed');
+            }
+        } catch (err) {
+            setError('Something went wrong');
+        }
+    };
+
+    return (
+        <div className="container mt-5" style={{maxWidth: 400}}>
+            <div className="card p-4">
+                <h5 className="mb-3">Register</h5>
+                {msg && <div className="alert alert-success">{msg}</div>}
+                {error && <div className="alert alert-danger">{error}</div>}
+                <input className="form-control mb-3" placeholder="Full Name"
+                    onChange={e => setForm({...form, name: e.target.value})} />
+                <input className="form-control mb-3" placeholder="Email"
+                    onChange={e => setForm({...form, email: e.target.value})} />
+                <input className="form-control mb-2" type={showPass ? 'text' : 'password'} placeholder="Password"
+                    onChange={e => setForm({...form, password: e.target.value})} />
+                <label className="show-pass-label mb-3 d-flex align-items-center gap-2">
+                    <input type="checkbox" onChange={e => setShowPass(e.target.checked)} />
+                    Show Password
+                </label>
+                <button className="btn btn-primary w-100 mb-2" onClick={submit}>Register</button>
+                <button className="btn btn-link w-100" onClick={onDone}>Back to Login</button>
+            </div>
+        </div>
+    );
+}
+
+function PatientDashboard({ token, name }) {
+    const [tab, setTab] = useState('symptoms');
+    const [symptoms, setSymptoms] = useState('');
+    const [aiResult, setAiResult] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [appointments, setAppointments] = useState([]);
+    const [bookForm, setBookForm] = useState({ date: '', time: '' });
+    const [bookMsg, setBookMsg] = useState('');
+
+    const checkSymptoms = async () => {
+        if (!symptoms.trim()) { alert('Please enter your symptoms!'); return; }
+        setLoading(true);
+        setAiResult(null);
+        try {
+            const res = await fetch(`${API}/api/symptom-check`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symptoms })
+            });
+            const data = await res.json();
+            if (data.error) alert('AI Error: ' + data.error);
+            else setAiResult(data);
+        } catch (err) {
+            alert('Something went wrong: ' + err.message);
+        }
+        setLoading(false);
+    };
+
+    const bookAppointment = async (doctorId) => {
+        if (!bookForm.date || !bookForm.time || bookForm.time === 'Select Time') {
+            alert('Please select a date and time first!'); return;
+        }
+        try {
+            const res = await fetch(`${API}/api/book-appointment`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    doctor_id: doctorId, symptoms,
+                    ai_suggestion: aiResult?.ai_response,
+                    date: bookForm.date, time: bookForm.time
+                })
+            });
+            const data = await res.json();
+            setBookMsg(data.message || data.error);
+            setTimeout(() => setBookMsg(''), 3000);
+        } catch (err) {
+            alert('Booking failed: ' + err.message);
+        }
+    };
+
+    const loadAppointments = async () => {
+        try {
+            const res = await fetch(`${API}/api/my-appointments`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            setAppointments(data);
+        } catch (err) { console.error('Failed to load appointments'); }
+    };
+
+    useEffect(() => { if (tab === 'appointments') loadAppointments(); }, [tab]);
+
+    return (
+        <div>
+            <nav className="navbar navbar-dark px-4 py-3">
+                <span className="navbar-brand fw-bold">🏥 MediCare AI</span>
+                <span className="text-white">👤 {name}</span>
+            </nav>
+            <div className="container mt-4">
+                <div className="d-flex gap-2 mb-4">
+                    <button className={`btn ${tab==='symptoms' ? 'btn-primary' : 'btn-outline-primary'}`}
+                        onClick={() => setTab('symptoms')}>🔍 Symptom Checker</button>
+                    <button className={`btn ${tab==='appointments' ? 'btn-primary' : 'btn-outline-primary'}`}
+                        onClick={() => setTab('appointments')}>📅 My Appointments</button>
+                </div>
+
+                {tab === 'symptoms' && (
+                    <div className="row">
+                        <div className="col-md-6">
+                            <div className="card p-4 mb-3">
+                                <h5>Describe Your Symptoms</h5>
+                                <textarea className="form-control mb-3" rows="4"
+                                    placeholder="e.g. I have chest pain, shortness of breath..."
+                                    value={symptoms}
+                                    onChange={e => setSymptoms(e.target.value)} />
+                                <button className="btn btn-primary" onClick={checkSymptoms} disabled={loading}>
+                                    {loading ? '🤖 Analyzing...' : '🤖 Analyze with AI'}
+                                </button>
+                            </div>
+                            {bookMsg && <div className="alert alert-success">{bookMsg}</div>}
+                            {aiResult && (
+                                <div className="card p-4">
+                                    <h6>📅 Select Date & Time to Book</h6>
+                                    <input type="date" className="form-control mb-2"
+                                        onChange={e => setBookForm({...bookForm, date: e.target.value})} />
+                                    <select className="form-control mb-2"
+                                        onChange={e => setBookForm({...bookForm, time: e.target.value})}>
+                                        <option>Select Time</option>
+                                        <option>09:00 AM</option>
+                                        <option>10:00 AM</option>
+                                        <option>11:00 AM</option>
+                                        <option>02:00 PM</option>
+                                        <option>03:00 PM</option>
+                                        <option>04:00 PM</option>
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+                        <div className="col-md-6">
+                            {aiResult && (
+                                <div>
+                                    <div className="card p-4 mb-3">
+                                        <h6>🤖 AI Analysis</h6>
+                                        <div className="symptom-result">
+                                            <p className="ai-response">{aiResult.ai_response}</p>
+                                        </div>
+                                    </div>
+                                    <h6>👨‍⚕️ Recommended Doctors</h6>
+                                    {aiResult.doctors.length === 0 && (
+                                        <p className="text-muted">No doctors found for this specialization.</p>
+                                    )}
+                                    {aiResult.doctors.map(doc => (
+                                        <div key={doc.id} className="card p-3 mb-2 doctor-card">
+                                            <div className="d-flex justify-content-between">
+                                                <div>
+                                                    <strong>{doc.name}</strong>
+                                                    <br/><small className="text-primary">{doc.specialization}</small>
+                                                    <br/><small className="text-muted">{doc.experience} years experience</small>
+                                                    <br/><small>📅 {doc.available_days}</small>
+                                                </div>
+                                                <button className="btn btn-sm btn-primary align-self-center"
+                                                    onClick={() => bookAppointment(doc.id)}>Book</button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {tab === 'appointments' && (
+                    <div className="card p-4">
+                        <h5>My Appointments</h5>
+                        {appointments.length === 0 && <p className="text-muted">No appointments yet.</p>}
+                        <table className="table">
+                            <thead><tr>
+                                <th>Doctor</th><th>Specialization</th>
+                                <th>Date</th><th>Time</th><th>Status</th>
+                            </tr></thead>
+                            <tbody>
+                                {appointments.map(a => (
+                                    <tr key={a.id}>
+                                        <td>{a.doctor_name}</td>
+                                        <td>{a.specialization}</td>
+                                        <td>{a.appointment_date}</td>
+                                        <td>{a.appointment_time}</td>
+                                        <td><span className={`badge ${a.status === 'confirmed' ? 'bg-success' : 'bg-warning'}`}>{a.status}</span></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function DoctorDashboard({ token, name }) {
+    const [appointments, setAppointments] = useState([]);
+
+    const loadAppointments = () => {
+        fetch(`${API}/api/doctor-appointments`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        }).then(r => r.json()).then(setAppointments).catch(console.error);
+    };
+
+    useEffect(() => { loadAppointments(); }, []);
+
+    const confirmAppointment = async (id) => {
+        await fetch(`${API}/api/confirm-appointment/${id}`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        loadAppointments();
+    };
+
+    return (
+        <div>
+            <nav className="navbar navbar-dark px-4 py-3">
+                <span className="navbar-brand fw-bold">🏥 MediCare AI</span>
+                <span className="text-white">👨‍⚕️ {name}</span>
+            </nav>
+            <div className="container mt-4">
+                <div className="card p-4">
+                    <h5>My Appointments</h5>
+                    {appointments.length === 0 && <p className="text-muted">No appointments yet.</p>}
+                    <table className="table">
+                        <thead><tr>
+                            <th>Patient</th><th>Symptoms</th>
+                            <th>Date</th><th>Time</th><th>Status</th><th>Action</th>
+                        </tr></thead>
+                        <tbody>
+                            {appointments.map(a => (
+                                <tr key={a.id}>
+                                    <td>{a.patient_name}</td>
+                                    <td><small>{a.symptoms?.substring(0,50)}...</small></td>
+                                    <td>{a.appointment_date}</td>
+                                    <td>{a.appointment_time}</td>
+                                    <td>
+                                        <span className={`badge ${a.status === 'confirmed' ? 'bg-success' : 'bg-warning'}`}>
+                                            {a.status}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {a.status === 'pending' && (
+                                            <button className="btn btn-sm btn-success"
+                                                onClick={() => confirmAppointment(a.id)}>
+                                                ✅ Confirm
+                                            </button>
+                                        )}
+                                        {a.status === 'confirmed' && (
+                                            <span className="text-success">✓ Done</span>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function AdminDashboard({ token, name }) {
+    const [appointments, setAppointments] = useState([]);
+
+    useEffect(() => {
+        fetch(`${API}/api/admin/appointments`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        }).then(r => r.json()).then(setAppointments).catch(console.error);
+    }, []);
+
+    const pending = appointments.filter(a => a.status === 'pending').length;
+    const confirmed = appointments.filter(a => a.status === 'confirmed').length;
+
+    return (
+        <div>
+            <nav className="navbar navbar-dark px-4 py-3">
+                <span className="navbar-brand fw-bold">🏥 MediCare AI</span>
+                <span className="text-white">🔧 Admin: {name}</span>
+            </nav>
+            <div className="container mt-4">
+                <div className="row mb-4">
+                    <div className="col-md-4">
+                        <div className="card p-3 text-center">
+                            <h2>{appointments.length}</h2>
+                            <p className="text-muted">Total Appointments</p>
+                        </div>
+                    </div>
+                    <div className="col-md-4">
+                        <div className="card p-3 text-center">
+                            <h2 className="text-warning">{pending}</h2>
+                            <p className="text-muted">Pending</p>
+                        </div>
+                    </div>
+                    <div className="col-md-4">
+                        <div className="card p-3 text-center">
+                            <h2 className="text-success">{confirmed}</h2>
+                            <p className="text-muted">Confirmed</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="card p-4">
+                    <h5>All Appointments</h5>
+                    <table className="table table-striped">
+                        <thead><tr>
+                            <th>Patient</th><th>Doctor</th><th>Specialization</th>
+                            <th>Date</th><th>Status</th>
+                        </tr></thead>
+                        <tbody>
+                            {appointments.map(a => (
+                                <tr key={a.id}>
+                                    <td>{a.patient_name}</td>
+                                    <td>{a.doctor_name}</td>
+                                    <td>{a.specialization}</td>
+                                    <td>{a.appointment_date}</td>
+                                    <td>
+                                        <span className={`badge ${a.status === 'confirmed' ? 'bg-success' : 'bg-warning'}`}>
+                                            {a.status}
+                                        </span>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function App() {
+    const [user, setUser] = useState(null);
+    const [page, setPage] = useState('login');
+
+    const onLogin = (data) => { setUser(data); setPage('dashboard'); };
+    const logout = () => { setUser(null); setPage('login'); };
+
+    if (page === 'register') return <Register onDone={() => setPage('login')} />;
+    if (!user) return <Login onLogin={onLogin} goRegister={() => setPage('register')} />;
+
+    return (
+        <div>
+            {user.role === 'patient' && <PatientDashboard token={user.token} name={user.name} />}
+            {user.role === 'doctor' && <DoctorDashboard token={user.token} name={user.name} />}
+            {user.role === 'admin' && <AdminDashboard token={user.token} name={user.name} />}
+            <div className="text-center mt-3 mb-4">
+                <button className="btn btn-outline-danger btn-sm" onClick={logout}>Logout</button>
+            </div>
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

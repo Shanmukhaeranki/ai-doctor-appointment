@@ -1,0 +1,5 @@
+.env
+hospital.db
+__pycache__/
+*.pyc
+*.pkl
